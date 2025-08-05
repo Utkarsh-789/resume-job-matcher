@@ -33,5 +33,4 @@ An intelligent Streamlit web app that predicts how well a candidate's resume mat
 
 ---
 
-## 📁 Folder Structure
 
