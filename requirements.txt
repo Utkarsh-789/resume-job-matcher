@@ -6,3 +6,4 @@ joblib
 PyMuPDF
 wordcloud
 matplotlib
+PyPDF2
