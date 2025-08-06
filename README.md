@@ -33,4 +33,12 @@ An intelligent Streamlit web app that predicts how well a candidate's resume mat
 
 ---
 
+## 🧠 Screenshots
+
+✅ Classification report-
+
+<img width="795" height="280" alt="Screenshot 2025-08-06 200447" src="https://github.com/user-attachments/assets/a2d6bc1b-5949-437e-8888-74fa0f3137fb" />
+
+
+
 
