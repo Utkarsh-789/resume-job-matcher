@@ -1,52 +1,34 @@
-# --- Finalized streamlit_app.py for Streamlit Cloud Deployment ---
-
 import streamlit as st
 import numpy as np
 import joblib
 import re
-import fitz  # PyMuPDF
-import os
+import PyPDF2
 import matplotlib.pyplot as plt
-from wordcloud import WordCloud
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-st.set_page_config(page_title="Resume–Job Match Predictor", layout="wide")
-
-# Check if model and vectorizer exist
-if not os.path.exists("model.pkl") or not os.path.exists("tfidf_vectorizer.pkl"):
-    st.error("Model or vectorizer not found. Please ensure 'model.pkl' and 'tfidf_vectorizer.pkl' are in the same folder.")
-    st.stop()
-
-# Load model and vectorizer
+# --- Load model and vectorizer ---
 model = joblib.load("model.pkl")
 tfidf = joblib.load("tfidf_vectorizer.pkl")
 
-st.title("📄 Resume–Job Match Predictor")
+st.title("Resume–Job Match Predictor")
 
-st.markdown("""
-### How to Use:
-1. Upload a **PDF Resume**.
-2. Enter the **Job Description**.
-3. Enter **Required Skills** (comma-separated).
-4. Click **Predict Match** to see the match probability and analysis.
-""")
+# Upload multiple resumes
+uploaded_files = st.file_uploader("Upload Resume PDFs (multiple allowed)", type="pdf", accept_multiple_files=True)
 
-use_example = st.checkbox("Use Example Data")
-
-uploaded_file = st.file_uploader("Upload Resume PDF", type=["pdf"])
-
-def extract_text_from_pdf(pdf_file):
-    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
-    text = ""
-    for page in doc:
-        text += page.get_text()
-    return text
-
+# Input job description and skills
 job_text = st.text_area("Paste Job Description Here")
-job_required_skills = st.text_input("Required Skills (comma-separated)")
+job_required_skills = st.text_input("Required Skills (comma-separated, as in job)")
 
-if use_example:
-    job_text = "We are seeking a data analyst with experience in Python, SQL, and Power BI. Must know statistics and reporting tools."
-    job_required_skills = "Python, SQL, Power BI, statistics, reporting"
+# -----------------------------
+# Helper functions
+# -----------------------------
+
+def extract_text_from_pdf(file):
+    reader = PyPDF2.PdfReader(file)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text() or ""
+    return text
 
 def extract_skills(text):
     return set(re.findall(r'\b[a-zA-Z]+\b', str(text).lower()))
@@ -58,46 +40,55 @@ def compute_features(resume, job, required_skills):
     job_skills = {s.strip() for s in required_skills.lower().split(",") if s.strip()} if required_skills else extract_skills(job)
     skill_overlap = len(resume_skills.intersection(job_skills)) / (len(job_skills) + 1)
     features = np.hstack([resume_tfidf.toarray(), job_tfidf.toarray(), np.array([[skill_overlap]])])
-    return features, resume_skills, job_skills
+    return features, skill_overlap
 
-if st.button("🔍 Predict Match"):
-    if (uploaded_file or use_example) and job_text.strip():
-        try:
-            resume_text = extract_text_from_pdf(uploaded_file) if uploaded_file else "Experienced data analyst with expertise in Python, SQL, Power BI, and statistics."
-            features, resume_skills, job_skills = compute_features(resume_text, job_text, job_required_skills)
-            probability = model.predict_proba(features)[:, 1][0]
-            st.success(f"🎯 Predicted match probability: {probability:.2%}")
-
-            # --- Visualizations ---
-            st.subheader("📊 Visual Analysis")
-
-            # Skill Overlap Pie Chart
-            matched_skills = resume_skills.intersection(job_skills)
-            unmatched_skills = job_skills - resume_skills
-            labels = ['Matched Skills', 'Unmatched Skills']
-            sizes = [len(matched_skills), len(unmatched_skills)]
-            fig1, ax1 = plt.subplots()
-            ax1.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
-            ax1.axis('equal')
-            st.pyplot(fig1)
-
-            # WordCloud for Resume
-            st.subheader("📄 Resume Word Cloud")
-            resume_wc = WordCloud(width=800, height=400).generate(resume_text)
-            fig2, ax2 = plt.subplots(figsize=(10, 5))
-            ax2.imshow(resume_wc, interpolation='bilinear')
-            ax2.axis('off')
-            st.pyplot(fig2)
-
-            # WordCloud for Job Description
-            st.subheader("🧾 Job Description Word Cloud")
-            job_wc = WordCloud(width=800, height=400).generate(job_text)
-            fig3, ax3 = plt.subplots(figsize=(10, 5))
-            ax3.imshow(job_wc, interpolation='bilinear')
-            ax3.axis('off')
-            st.pyplot(fig3)
-
-        except Exception as e:
-            st.error(f"❌ Error: {e}")
+# -----------------------------
+# Prediction and Display
+# -----------------------------
+if st.button("Predict Matches"):
+    if not job_text.strip():
+        st.warning("Please enter a job description.")
+    elif not uploaded_files:
+        st.warning("Please upload at least one resume PDF.")
     else:
-        st.warning("⚠️ Please upload a resume and enter a job description.")
+        results = []
+
+        for uploaded_file in uploaded_files:
+            resume_text = extract_text_from_pdf(uploaded_file)
+            features, overlap = compute_features(resume_text, job_text, job_required_skills)
+            probability = model.predict_proba(features)[:,1][0]
+            results.append({
+                "filename": uploaded_file.name,
+                "probability": probability,
+                "overlap": overlap,
+                "text": resume_text
+            })
+
+        # Sort by match probability in descending order
+        results = sorted(results, key=lambda x: x["probability"], reverse=True)
+
+        # Display results
+        for res in results:
+            st.subheader(f"📄 {res['filename']}")
+            st.write(f"✅ **Match Probability:** {res['probability']:.2%}")
+            st.write(f"🧠 **Skill Overlap Score:** {res['overlap']:.2f}")
+            st.markdown("---")
+
+        # Show summary chart
+        st.subheader("📊 Match Probability Comparison (Sorted)")
+        fig, ax = plt.subplots()
+        filenames = [res["filename"] for res in results]
+        probabilities = [res["probability"] for res in results]
+        ax.barh(filenames[::-1], probabilities[::-1])  # Reverse to show top match at top
+        ax.set_xlabel("Match Probability")
+        ax.set_xlim(0, 1)
+        st.pyplot(fig)
+
+st.markdown("""
+**Instructions:**  
+- Copy your trained `model.pkl` and `tfidf_vectorizer.pkl` to the app folder.  
+- Run from the terminal with:
+```bash
+streamlit run streamlit_app.py
+```
+""")
