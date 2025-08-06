@@ -84,11 +84,5 @@ if st.button("Predict Matches"):
         ax.set_xlim(0, 1)
         st.pyplot(fig)
 
-st.markdown("""
-**Instructions:**  
-- Copy your trained `model.pkl` and `tfidf_vectorizer.pkl` to the app folder.  
-- Run from the terminal with:
-```bash
-streamlit run streamlit_app.py
-```
-""")
+
+
